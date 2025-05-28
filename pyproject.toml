@@ -1,0 +1,25 @@
+[project]
+name = "ariadne-lib"
+authors = [
+    {name = "Tony Chen"}
+]
+version = "0.1.1"
+description = "Find your way in a maze of experiments"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+dev-dependencies = [
+]
+
+[project.urls]
+Repository = "https://github.com/chentoast/ariadne.git"
+
+[build-system]
+requires = ["hatchling >= 1.2.7"]
+build-backend = "hatchling.build"
+
+[project.scripts]
+ariadne = "ariadne:cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ariadne"]
