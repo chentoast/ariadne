@@ -1,0 +1,7 @@
+version = 1
+requires-python = ">=3.13"
+
+[[package]]
+name = "ariadne"
+version = "0.0.0"
+source = { virtual = "." }

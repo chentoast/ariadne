@@ -1,0 +1,13 @@
+[project]
+name = "ariadne"
+dynamic = ["version"]
+authors = [
+    {name = "Tony Chen"}
+]
+description = "Find your way in a maze of experiments"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = []
+
+[project.scripts]
+ariadne = "ariadne:cli"
