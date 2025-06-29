@@ -1,6 +1,5 @@
 import atexit
 import datetime
-import inspect
 import json
 import os
 import shutil
@@ -26,7 +25,6 @@ class Spool:
     notes: str
     vc_hash: str | None = None
     vc_msg: str | None = None
-    source_code: str | None = None
     completed: bool = False
 
     def __str__(self):
@@ -137,7 +135,6 @@ class Theseus:
                     notes TEXT,
                     vc_hash TEXT,
                     vc_msg TEXT,
-                    source_code TEXT,
                     completed BOOLEAN DEFAULT 0
                 )
             """)
@@ -160,7 +157,7 @@ class Theseus:
         Starts a new experiment with the given name, notes, and run configuration.
         Creates a new run folder with a timestamp and unique identifier, initializes the expbase entry,
         and registers a cleanup function to mark the experiment as completed when the program exits.
-        Automatically dumps the run configuration to a JSON file in the run folder, and creates a subfolder for figures.
+        Automatically dumps the run configuration to a JSON file in the run folder.
 
         Raises:
             FileExistsError: If a run folder with the same name already exists.
@@ -178,7 +175,6 @@ class Theseus:
         temp_run_folder = self.exp_dir / f"{name}.tmp_{uuid.uuid4().hex[:8]}"
         try:
             os.makedirs(temp_run_folder)
-            os.makedirs(temp_run_folder / "figures")
 
             with open(temp_run_folder / "config.json", "w") as f:
                 json.dump(run_config, f, indent=2)
@@ -203,23 +199,12 @@ class Theseus:
             except FileNotFoundError:
                 changeset, msg = None, None
 
-            frame = inspect.currentframe()
-            if frame:
-                frame = frame.f_back  # move to caller of 'start'
-
-            source_code = ""
-            max_depth = 10
-            while frame and max_depth > 0:
-                source_code = "\n\n------------\n\n".join((inspect.getsource(frame), source_code))
-                frame = frame.f_back
-                max_depth -= 1
-
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 res = cursor.execute(
                     """
-                    INSERT INTO experiments (name, timestamp, run_config, logs, folder, notes, vc_hash, vc_msg, source_code)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
+                    INSERT INTO experiments (name, timestamp, run_config, logs, folder, notes, vc_hash, vc_msg)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
                 """,
                     (
                         name,
@@ -230,7 +215,6 @@ class Theseus:
                         notes,
                         changeset,
                         msg,
-                        source_code,
                     ),
                 )
                 db_id = res.fetchone()[0]
@@ -301,8 +285,11 @@ class Theseus:
 
     def start_test(self) -> tuple[int, Path]:
         """
-        Starts a temporary experiment with run configuration.
+        Starts a temporary experiment.
         Creates a new run folder in the users /tmp directory. This run does not update the database entry.
+
+        Raises:
+            FileExistsError: If a run folder with the same name already exists.
         """
         now = datetime.datetime.now()
         run_folder = (Path("/tmp") / f"ariadne_test_{now.strftime('%Y-%m-%d-%H-%M-%S')}_{uuid.uuid4().hex[:4]}").resolve()
@@ -312,7 +299,6 @@ class Theseus:
         try:
             db_id = -1
             os.makedirs(run_folder)
-            os.makedirs(run_folder / "figures")
 
             self._setup(db_id)
             return db_id, run_folder.resolve()
@@ -440,7 +426,6 @@ def convert_row(row: sqlite3.Row):
         notes=row["notes"],
         vc_hash=row["vc_hash"],
         vc_msg=row["vc_msg"],
-        source_code=row["source_code"],
         completed=row["completed"],
     )
 
