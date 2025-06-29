@@ -17,7 +17,7 @@ The solution Ariadne provides is the simplest one possible: assign each experime
 The primary experiment management happens in the `Theseus` class. Calling `start` or `resume` returns a id for that experiment, along with the dedicated folder that everything should be stored under.
 
 ```python
-from Ariadne import Theseus
+from ariadne import Theseus
 
 experiment = Theseus(db_path="experiments.db", base_dir="results")
 experiment_id, experiment_folder = experiment.start(name="resnet", run_config={"architecture": "resnet-50"}, notes="try resnet instead of mlp")
