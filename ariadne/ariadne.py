@@ -108,6 +108,7 @@ class Theseus:
     def _setup(self, db_id: int):
         def signal_handler(signum, frame):
             self.__interrupted = True
+            sys.exit(1)
 
         def excepthook(exc_type, exc_value, exc_traceback):
             self.__interrupted = True
