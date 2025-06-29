@@ -12,6 +12,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
+
 @dataclass(frozen=True, slots=True)
 class Spool:
     id: int
@@ -32,7 +33,7 @@ class Spool:
 
         def format_ts(ts_value):
             if isinstance(ts_value, datetime.datetime):
-                return ts_value.strftime('%Y-%m-%d %H:%M:%S')
+                return ts_value.strftime("%Y-%m-%d %H:%M:%S")
             elif ts_value:
                 return str(ts_value)
             return "N/A"
@@ -40,7 +41,7 @@ class Spool:
         def format_pformatted_dict(data_dict, max_pformat_len=250, pformat_options=None):
             if pformat_options is None:
                 # Controls internal indentation of pprint and line width
-                pformat_options = {'indent': 2, 'width': 70, 'compact': True}
+                pformat_options = {"indent": 2, "width": 70, "compact": True}
 
             if not data_dict:
                 return " None"
@@ -52,17 +53,17 @@ class Spool:
             if len(s) > max_pformat_len:
                 content_allowance = max_pformat_len - len(truncation_suffix)
 
-                if content_allowance < 10 : # Not enough space for meaningful content + suffix
+                if content_allowance < 10:  # Not enough space for meaningful content + suffix
                     # Replace with a simple truncation marker if pformat output is too short to cut nicely
                     s = truncation_suffix
                 else:
                     # Try to cut at a newline for prettier truncation
                     # We look for a newline within the allowed content space
-                    cut_at = s.rfind('\n', 0, content_allowance)
-                    if cut_at != -1: # Sensible place to cut found
+                    cut_at = s.rfind("\n", 0, content_allowance)
+                    if cut_at != -1:  # Sensible place to cut found
                         # Add the suffix on a new line, respecting existing indent logic
                         s = s[:cut_at] + "\n" + truncation_suffix
-                    else: # No newline in the allowed part, or very long first line
+                    else:  # No newline in the allowed part, or very long first line
                         s = s[:content_allowance] + truncation_suffix
 
             # Add a leading newline (to separate from the label like "Run Config:")
@@ -139,7 +140,7 @@ class Theseus:
                 )
             """)
 
-    def resume_or_start(self, name: str, run_config: dict, notes: str="") -> tuple[int, Path]:
+    def resume_or_start(self, name: str, run_config: dict, notes: str = "") -> tuple[int, Path]:
         """
         Resumes an existing, uncompleted experiment by its name or starts a new one if not found.
 
@@ -152,7 +153,7 @@ class Theseus:
             print("starting a new experiment")
             return self.start(name, run_config, notes)
 
-    def start(self, name: str, run_config: dict, notes: str="") -> tuple[int, Path]:
+    def start(self, name: str, run_config: dict, notes: str = "") -> tuple[int, Path]:
         """
         Starts a new experiment with the given name, notes, and run configuration.
         Creates a new run folder with a timestamp and unique identifier, initializes the database entry,
@@ -165,8 +166,7 @@ class Theseus:
         now = datetime.datetime.now()
 
         run_folder = (
-            Path(self.base_dir)
-            / f"{name}_{now.strftime('%Y-%m-%d')}_{uuid.uuid4().hex[:8]}"
+            Path(self.base_dir) / f"{name}_{now.strftime('%Y-%m-%d')}_{uuid.uuid4().hex[:8]}"
         )
         if run_folder.exists():
             raise FileExistsError(f"Run folder {run_folder} already exists.")
@@ -181,21 +181,24 @@ class Theseus:
             with open(temp_run_folder / "config.json", "w") as f:
                 json.dump(run_config, f, indent=2)
 
-            if (
-                subprocess.run(
-                    ["jj"], capture_output=True, text=True, check=False
-                ).returncode
-                == 0
-            ):
-                changeset, msg = get_jj_changeset_and_msg()
-            elif (
-                subprocess.run(
-                    ["git", "rev-parse"], capture_output=True, text=True, check=False
-                ).returncode
-                == 0
-            ):
-                changeset, msg = get_git_hash_and_msg()
-            else:
+            try:
+                if (
+                    subprocess.run(["jj"], capture_output=True, text=True, check=False).returncode
+                    == 0
+                ):
+                    changeset, msg = get_jj_changeset_and_msg()
+            except FileNotFoundError:
+                changeset, msg = None, None
+
+            try:
+                if (
+                    subprocess.run(
+                        ["git", "rev-parse"], capture_output=True, text=True, check=False
+                    ).returncode
+                    == 0
+                ):
+                    changeset, msg = get_git_hash_and_msg()
+            except FileNotFoundError:
                 changeset, msg = None, None
 
             frame = inspect.currentframe()
@@ -205,9 +208,7 @@ class Theseus:
             source_code = ""
             max_depth = 10
             while frame and max_depth > 0:
-                source_code = "\n\n------------\n\n".join(
-                    (inspect.getsource(frame), source_code)
-                )
+                source_code = "\n\n------------\n\n".join((inspect.getsource(frame), source_code))
                 frame = frame.f_back
                 max_depth -= 1
 
@@ -289,9 +290,7 @@ class Theseus:
 
             self._setup(db_id)
 
-            print(
-                f"Resuming experiment '{name}' (ID: {db_id}). Original run folder: {run_folder}"
-            )
+            print(f"Resuming experiment '{name}' (ID: {db_id}). Original run folder: {run_folder}")
             return db_id, run_folder
         else:
             raise ValueError(
@@ -328,9 +327,12 @@ class Theseus:
             conn.row_factory = sqlite3.Row
 
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT * FROM experiments WHERE id = ?
-            """, (id,))
+            """,
+                (id,),
+            )
             row = cursor.fetchone()
         cursor.close()
 
@@ -384,7 +386,7 @@ class Theseus:
 
     def _cleanup(self, id: int):
         if self.__interrupted:
-            return # Skip cleanup if interrupted
+            return  # Skip cleanup if interrupted
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """
@@ -445,9 +447,7 @@ def cli():
     import argparse
 
     parser = argparse.ArgumentParser(description="Ariadne CLI")
-    parser.add_argument(
-        "--db", type=str, required=True, help="Path to the SQLite database file"
-    )
+    parser.add_argument("--db", type=str, required=True, help="Path to the SQLite database file")
     parser.add_argument(
         "--base-dir",
         type=str,
@@ -458,16 +458,14 @@ def cli():
     subparser = parser.add_subparsers(dest="command")
     subparser.add_parser("list", help="List all experiments")
 
-    query_parser = subparser.add_parser(
-        "query", help="Get folder of an experiment by name"
-    )
+    query_parser = subparser.add_parser("query", help="Get folder of an experiment by name")
     query_parser.add_argument("name", type=str, help="Name of the experiment")
 
-    show_parser = subparser.add_parser(
-        "show", help="Show details of an experiment by name"
-    )
+    show_parser = subparser.add_parser("show", help="Show details of an experiment by name")
     show_parser.add_argument("name", type=str, help="Name of the experiment")
-    show_parser.add_argument("field", type=str, help="Field to show (e.g., 'name', 'folder')", default="summary")
+    show_parser.add_argument(
+        "field", type=str, help="Field to show (e.g., 'name', 'folder')", default="summary"
+    )
 
     args = parser.parse_args()
 
