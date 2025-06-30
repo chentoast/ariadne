@@ -3,15 +3,16 @@ import datetime
 import inspect
 import json
 import os
-import sqlite3
-import subprocess
 import shutil
 import signal
+import sqlite3
+import subprocess
 import sys
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
+# TODO: figure out api for naming experiments.
 
 @dataclass(frozen=True, slots=True)
 class Spool:
@@ -99,9 +100,11 @@ class Spool:
 
 
 class Theseus:
-    def __init__(self, db_path: str | Path, base_dir: str | Path):
-        self.base_dir = Path(base_dir).resolve()
+    def __init__(self, db_path: str | Path, exp_dir: str | Path):
         self.db_path = Path(db_path).resolve()
+        self.root = self.db_path.parent
+        # make sure that exp_dir is a relative path, for portability
+        self.exp_dir = Path(os.path.relpath(exp_dir, self.root))
 
         self.__interrupted = True
         self._init_db(self.db_path)
@@ -116,7 +119,6 @@ class Theseus:
             sys.__excepthook__(exc_type, exc_value, exc_traceback)
 
         sys.excepthook = excepthook
-        # signal.signal(signal.SIGINT, signal_handler)
         for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
             signal.signal(sig, signal_handler)
         atexit.register(self._cleanup, db_id)
@@ -156,7 +158,7 @@ class Theseus:
     def start(self, name: str, run_config: dict, notes: str = "") -> tuple[int, Path]:
         """
         Starts a new experiment with the given name, notes, and run configuration.
-        Creates a new run folder with a timestamp and unique identifier, initializes the database entry,
+        Creates a new run folder with a timestamp and unique identifier, initializes the expbase entry,
         and registers a cleanup function to mark the experiment as completed when the program exits.
         Automatically dumps the run configuration to a JSON file in the run folder, and creates a subfolder for figures.
 
@@ -166,14 +168,14 @@ class Theseus:
         now = datetime.datetime.now()
 
         run_folder = (
-            Path(self.base_dir) / f"{name}_{now.strftime('%Y-%m-%d')}_{uuid.uuid4().hex[:8]}"
+            self.exp_dir / f"{name}_{now.strftime('%Y-%m-%d')}_{uuid.uuid4().hex[:8]}"
         )
         if run_folder.exists():
             raise FileExistsError(f"Run folder {run_folder} already exists.")
 
         db_id = None
         # for atomicity, first create a temp directory and move it to the final location later
-        temp_run_folder = self.base_dir / f"{name}.tmp_{uuid.uuid4().hex[:8]}"
+        temp_run_folder = self.exp_dir / f"{name}.tmp_{uuid.uuid4().hex[:8]}"
         try:
             os.makedirs(temp_run_folder)
             os.makedirs(temp_run_folder / "figures")
@@ -236,7 +238,7 @@ class Theseus:
             os.rename(temp_run_folder, run_folder)
 
             self._setup(db_id)
-            return db_id, run_folder
+            return db_id, run_folder.resolve()
 
         except Exception as e:
             if db_id is not None and run_folder.exists():
@@ -291,7 +293,7 @@ class Theseus:
             self._setup(db_id)
 
             print(f"Resuming experiment '{name}' (ID: {db_id}). Original run folder: {run_folder}")
-            return db_id, run_folder
+            return db_id, run_folder.resolve()
         else:
             raise ValueError(
                 f"No active (uncompleted) experiment found with name '{name}' to resume."
@@ -449,7 +451,7 @@ def cli():
     parser = argparse.ArgumentParser(description="Ariadne CLI")
     parser.add_argument("--db", type=str, required=True, help="Path to the SQLite database file")
     parser.add_argument(
-        "--base-dir",
+        "--exp-dir",
         type=str,
         default="experiments",
         help="Path to the base directory for experiments",
@@ -469,7 +471,7 @@ def cli():
 
     args = parser.parse_args()
 
-    theseus = Theseus(db_path=Path(args.db), base_dir=Path(args.base_dir))
+    theseus = Theseus(db_path=Path(args.db), exp_dir=Path(args.exp_dir))
     match args.command:
         case "list":
             experiments = theseus.list()
@@ -481,7 +483,7 @@ def cli():
                 print(f"No experiments found with name '{args.name}'")
                 exit(1)
             for exp in matches:
-                print(f"Experiment: {exp.name} -> {args.base_dir}/{exp.folder}/")
+                print(f"Experiment: {exp.name} -> {args.exp_dir}/{exp.folder}/")
         case "show":
             import pprint as pp
 
