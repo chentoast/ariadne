@@ -9,6 +9,7 @@ import subprocess
 import sys
 import uuid
 from dataclasses import dataclass
+from enum import IntEnum
 from pathlib import Path
 
 # TODO: figure out api for naming experiments.
@@ -98,11 +99,17 @@ class Spool:
 
 
 class Theseus:
-    def __init__(self, db_path: str | Path, exp_dir: str | Path):
+    class LogLevel(IntEnum):
+        NONE = 0
+        INFO = 1
+        DEBUG = 2
+
+    def __init__(self, db_path: str | Path, exp_dir: str | Path, loglevel: LogLevel = LogLevel.INFO):
         self.db_path = Path(db_path).resolve()
         self.root = self.db_path.parent
         # make sure that exp_dir is a relative path, for portability
         self.exp_dir = Path(os.path.relpath(exp_dir, self.root))
+        self.loglevel = loglevel
 
         self.__interrupted = True
         self._init_db(self.db_path)
@@ -122,6 +129,9 @@ class Theseus:
         atexit.register(self._cleanup, db_id)
 
     def _init_db(self, db_path: str | Path):
+        if self.loglevel >= Theseus.LogLevel.DEBUG:
+            print(f"Ariadne: Initializing database at {db_path}")
+
         with sqlite3.connect(db_path) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS experiments (
@@ -147,9 +157,12 @@ class Theseus:
         If not, it starts a new experiment with the given name and returns its ID and run folder.
         """
         try:
+            if self.loglevel >= Theseus.LogLevel.INFO:
+                print(f"Ariadne: Attempting to resume experiment '{name}'")
             return self.resume(name)
         except ValueError:
-            print("starting a new experiment")
+            if self.loglevel >= Theseus.LogLevel.INFO:
+                print(f"Ariadne: No active experiment found with name '{name}'. Starting a new one.")
             return self.start(name, run_config, notes)
 
     def start(self, name: str, run_config: dict, notes: str = "") -> tuple[int, Path]:
@@ -173,6 +186,8 @@ class Theseus:
         db_id = None
         # for atomicity, first create a temp directory and move it to the final location later
         temp_run_folder = self.exp_dir / f"{name}.tmp_{uuid.uuid4().hex[:8]}"
+        if self.loglevel >= Theseus.LogLevel.DEBUG:
+            print(f"Ariadne: Creating temporary run folder for experiment '{name}' at {temp_run_folder}")
         try:
             os.makedirs(temp_run_folder)
 
@@ -220,6 +235,8 @@ class Theseus:
                 db_id = res.fetchone()[0]
 
             os.rename(temp_run_folder, run_folder)
+            if self.loglevel >= Theseus.LogLevel.INFO:
+                print(f"Ariadne: Started experiment '{name}' (ID: {db_id}) in folder: {run_folder}")
 
             self._setup(db_id)
             return db_id, run_folder.resolve()
@@ -227,13 +244,14 @@ class Theseus:
         except Exception as e:
             if db_id is not None and run_folder.exists():
                 # DB entry was created, but run folder creation failed
-                print(f"Error starting experiment '{name}': {e}. Cleaning up DB entry.")
+                if self.loglevel >= Theseus.LogLevel.INFO:
+                    print(f"Ariadne: Error starting experiment '{name}': {e}. Cleaning up DB entry.")
                 try:
                     with sqlite3.connect(self.db_path) as conn:
                         conn.execute("DELETE FROM experiments WHERE id = ?", (db_id,))
                 except sqlite3.Error as cleanup_err:
                     print(
-                        f"CRITICAL ERROR: Failed to create run folder AND subsequently failed to clean up "
+                        f"Ariadne: CRITICAL ERROR: Failed to create run folder AND subsequently failed to clean up "
                         f"orphaned database record (ID: {db_id}). Manual intervention may be needed. "
                         f"Cleanup Error: {cleanup_err}. Original Error: {e}"
                     )
@@ -276,7 +294,8 @@ class Theseus:
 
             self._setup(db_id)
 
-            print(f"Resuming experiment '{name}' (ID: {db_id}). Original run folder: {run_folder}")
+            if self.loglevel >= Theseus.LogLevel.INFO:
+                print(f"Ariadne: Resuming experiment '{name}' (ID: {db_id}). Original run folder: {run_folder}")
             return db_id, run_folder.resolve()
         else:
             raise ValueError(
@@ -293,6 +312,10 @@ class Theseus:
         """
         now = datetime.datetime.now()
         run_folder = (Path("/tmp") / f"ariadne_test_{now.strftime('%Y-%m-%d-%H-%M-%S')}_{uuid.uuid4().hex[:4]}").resolve()
+
+        if self.loglevel >= Theseus.LogLevel.INFO:
+            print(f"Ariadne: Starting temporary experiment in {run_folder}")
+
         if run_folder.exists():
             raise FileExistsError(f"Run folder {run_folder} already exists.")
 
@@ -306,10 +329,10 @@ class Theseus:
         except Exception as e:
             if run_folder.exists():
                 # DB entry was created, but run folder creation failed
-                print(f"Error starting temporary experiment: {e}. Cleaning up run folder.")
+                print(f"Ariadne: Error starting temporary experiment: {e}. Cleaning up run folder.")
                 shutil.rmtree(run_folder)
             else:
-                print(f"Error starting temporary experiment: {e}.")
+                print(f"Ariadne: Error starting temporary experiment: {e}.")
             raise e
 
 
@@ -402,7 +425,7 @@ class Theseus:
 
     def _cleanup(self, id: int):
         if self.__interrupted:
-            return  # Skip cleanup if interrupted
+            return
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """
