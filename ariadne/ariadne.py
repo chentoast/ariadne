@@ -299,6 +299,34 @@ class Theseus:
                 f"No active (uncompleted) experiment found with name '{name}' to resume."
             )
 
+    def start_test(self) -> tuple[int, Path]:
+        """
+        Starts a temporary experiment with run configuration.
+        Creates a new run folder in the users /tmp directory. This run does not update the database entry.
+        """
+        now = datetime.datetime.now()
+        run_folder = (Path("/tmp") / f"ariadne_test_{now.strftime('%Y-%m-%d-%H-%M-%S')}_{uuid.uuid4().hex[:4]}").resolve()
+        if run_folder.exists():
+            raise FileExistsError(f"Run folder {run_folder} already exists.")
+
+        try:
+            db_id = -1
+            os.makedirs(run_folder)
+            os.makedirs(run_folder / "figures")
+
+            self._setup(db_id)
+            return db_id, run_folder.resolve()
+
+        except Exception as e:
+            if run_folder.exists():
+                # DB entry was created, but run folder creation failed
+                print(f"Error starting temporary experiment: {e}. Cleaning up run folder.")
+                shutil.rmtree(run_folder)
+            else:
+                print(f"Error starting temporary experiment: {e}.")
+            raise e
+
+
     def log(self, id: int, logs: dict):
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
