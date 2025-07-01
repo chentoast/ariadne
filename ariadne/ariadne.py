@@ -394,20 +394,24 @@ class Theseus:
             return convert_row(row)
         return None
 
-    def list(self) -> list[str]:
+    def list(self) -> dict[str, Path]:
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
-            out = []
+            out = {}
             for row in conn.execute("""
-                SELECT name FROM experiments
+                SELECT name,folder FROM experiments
             """):
-                out.append(row["name"])
+                folder = os.path.relpath(row["folder"], self.root)
+                out[row["name"]] = Path(folder)
 
         return out
 
     def delete(self, id: int):
         """
         Deletes an experiment by its ID. This will remove the entry from the database and delete the associated run folder.
+
+        Raises:
+            ValueError: If no experiment with the given ID is found.
         """
         spool = self.get_by_id(id)
         if not spool:
@@ -510,16 +514,18 @@ def cli():
     theseus = Theseus(db_path=Path(args.db), exp_dir=Path(args.exp_dir))
     match args.command:
         case "list":
+            print("\nExperiments:")
             experiments = theseus.list()
-            for exp in experiments:
-                print(exp)  # Print only the name of each experiment
+            for exp_name, exp_folder in experiments.items():
+                print(exp_name, "->", str(exp_folder))  # Print only the name of each experiment
+            print()
         case "query":
             matches = theseus.get(args.name)
             if not matches:
                 print(f"No experiments found with name '{args.name}'")
                 exit(1)
             for exp in matches:
-                print(f"Experiment: {exp.name} -> {args.exp_dir}/{exp.folder}/")
+                print(f"{exp.name} -> {args.exp_dir}/{exp.folder}/")
         case "show":
             import pprint as pp
 
