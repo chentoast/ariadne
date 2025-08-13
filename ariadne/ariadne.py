@@ -406,6 +406,27 @@ class Theseus:
 
         return out
 
+    def note(self, id: int, text: str, append=True):
+        """
+        Adds or appends a note to an experiment by its ID.
+        Raises:
+            ValueError: If no experiment with the given ID is found.
+        """
+        if append:
+            current = self.get_by_id(id)
+            if current and current.notes:
+                text = current.notes + "\n" + text
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                UPDATE experiments
+                SET notes = ?
+                WHERE id = ?
+                """,
+                (text, id),
+            )
+
     def delete(self, id: int):
         """
         Deletes an experiment by its ID. This will remove the entry from the database and delete the associated run folder.
@@ -509,6 +530,15 @@ def cli():
         "field", type=str, help="Field to show (e.g., 'name', 'folder')", default="summary"
     )
 
+    note_parser = subparser.add_parser("note", help="Annotate an experiment by ID")
+    note_parser.add_argument("id", type=int, help="ID of the experiment")
+    note_parser.add_argument("note", type=str, help="Note to add")
+    note_parser.add_argument(
+        "--append",
+        action="store_true",
+        help="Append the note instead of replacing existing notes",
+    )
+
     args = parser.parse_args()
 
     theseus = Theseus(db_path=Path(args.db), exp_dir=Path(args.exp_dir))
@@ -543,6 +573,8 @@ def cli():
             for exp in matches:
                 pp.pprint(f"{args.field}: {getattr(exp, args.field)}")
                 print("-----------------")
+        case "note":
+            theseus.note(args.id, args.note, append=args.append)
         case _:
             parser.print_help()
             exit(1)
