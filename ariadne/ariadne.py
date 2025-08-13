@@ -394,15 +394,14 @@ class Theseus:
             return convert_row(row)
         return None
 
-    def list(self) -> dict[str, Path]:
+    def list(self) -> list[Spool]:
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
-            out = {}
+            out = []
             for row in conn.execute("""
-                SELECT name,folder FROM experiments
+                SELECT * FROM experiments
             """):
-                folder = os.path.relpath(row["folder"], self.root)
-                out[row["name"]] = Path(folder)
+                out.append(convert_row(row))
 
         return out
 
@@ -524,10 +523,10 @@ def cli():
     query_parser = subparser.add_parser("query", help="Get folder of an experiment by name")
     query_parser.add_argument("name", type=str, help="Name of the experiment")
 
-    show_parser = subparser.add_parser("show", help="Show details of an experiment by name")
-    show_parser.add_argument("name", type=str, help="Name of the experiment")
+    show_parser = subparser.add_parser("show", help="Show details of an experiment")
+    show_parser.add_argument("id", type=int, help="ID of the experiment")
     show_parser.add_argument(
-        "field", type=str, help="Field to show (e.g., 'name', 'folder')", default="summary"
+        "--fields", type=str, help="Comma separated list of fields to show (e.g., 'name', 'folder')", default="summary"
     )
 
     note_parser = subparser.add_parser("note", help="Annotate an experiment by ID")
@@ -546,8 +545,8 @@ def cli():
         case "list":
             print("\nExperiments:")
             experiments = theseus.list()
-            for exp_name, exp_folder in experiments.items():
-                print(exp_name, "->", str(exp_folder))  # Print only the name of each experiment
+            for exp in experiments:
+                print(exp.id, ":", exp.name, "->", str(exp.folder))  # Print only the name of each experiment
             print()
         case "query":
             matches = theseus.get(args.name)
@@ -559,19 +558,18 @@ def cli():
         case "show":
             import pprint as pp
 
-            matches = theseus.get(args.name)
-            if not matches:
-                print(f"No experiments found with name '{args.name}'")
+            match = theseus.get_by_id(args.id)
+            if not match:
+                print(f"No experiments found with ID '{args.id}'")
                 exit(1)
 
-            if args.field == "summary":
-                for match in matches:
-                    print(str(match))
-                    print("-----------------")
+            if args.fields == "summary":
+                print(str(match))
+                print("-----------------")
                 exit(0)
 
-            for exp in matches:
-                pp.pprint(f"{args.field}: {getattr(exp, args.field)}")
+            for field in args.fields.split(","):
+                pp.pprint(f"{field}: {getattr(match, field)}")
                 print("-----------------")
         case "note":
             theseus.note(args.id, args.note, append=args.append)
